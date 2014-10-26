@@ -1,0 +1,4 @@
+<config>
+  <capture interface="eth0" port="6633"/>
+  <mongo host="localhost" port="27017" database="openflow" />
+</config>
