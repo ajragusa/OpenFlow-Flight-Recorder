@@ -1,0 +1,98 @@
+<html>
+  <head>
+    <title>OpenFlow Flight Recorder</title>
+    <script type="text/javascript" language="javascript" src="//code.jquery.com/jquery-1.11.1.min.js"></script>
+    <script type="text/javascript" language="javascript" src="//cdn.datatables.net/1.10.3/js/jquery.dataTables.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="http://cdn.datatables.net/1.10.3/css/jquery.dataTables.min.css" media="screen" />
+
+    <script type="text/javascript">
+
+      $(document).ready(function(){
+        var lastIdx = null;
+        var table = $('#dt').DataTable( {
+          "serverSide": true,
+          "ajax": {
+              "url": "http://aj-dev6.grnoc.iu.edu:27080/offr/of_messages/_find?",
+              "dataSrc": "results",
+              "data": function(d){
+                delete d.columns;
+                delete d.search;
+                delete d.order;
+                d.skip = d.start;
+                d.batch_size = d.length;
+                
+              }
+          },
+          "columns": [
+            {"data": "src",
+             "title": "Source IP"},
+            {"data": "dst",
+             "title": "Destination IP"},
+            {"data": "ts",
+             "title": "Date",
+             "render": function(data, type, row, meta){
+                       var date = new Date(Math.floor(parseInt(data * 1000)));
+                       return date;
+            }},
+            {"data": "message",
+             "render": function(data, type, row, meta){
+               if(data.ofp_header == undefined){
+                 return "";
+               }else{
+                 return data.ofp_header.type;
+               }
+             },
+             "title": "OF Header Type"}
+          ]
+        });
+
+      
+        $('#dt').on('click','tr',function(){
+          if( $(this).hasClass('selected')){
+            $(this).removeClass('selected');
+          }else{
+            table.$('tr.selected').removeClass('selected');
+            $(this).addClass('selected');
+            display_details(table.rows('.selected').data()[0]);
+          }
+        });
+    
+       });     
+
+      function display_details(data){
+            if(data.message.ofp_header == undefined){
+               var str = "Error Processing Message";
+               $('#flow_mod').html( str);
+               return;
+            }
+
+            var str = "Time: " + new Date(Math.floor(parseInt(data.ts))).toString() + "<br>"; 
+            str += "Source IP: " + data.src + "<br>";
+            str += "Destination IP: " + data.dst + "<br>"; 
+            str += "OF Type: " + data.message.ofp_header.type + "<br>";
+            if(data.message.type != undefined){
+               str += "Sub Type: " + data.message.type + "<br>";
+            }
+            str += "Version: " + data.message.ofp_header.version + "<br>";
+            str += "xid: " + data.message.ofp_header.xid + "<br>";
+            str += "length: " + data.message.ofp_header.length + "<br>";
+            str += "body: " + JSON.stringify(data.message.body) + "<br>";
+            $('#flow_mod').html( str);
+      }
+      
+    </script>
+  </head>
+  <body>
+
+    <table id="dt">
+    </table>
+
+<br>
+
+    <div id="flow_mod" style="height:200px; width: 100%;">
+    </div>
+    
+  </body> 
+  
+
+</html>
