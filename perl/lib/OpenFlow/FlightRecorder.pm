@@ -6,11 +6,14 @@ use Net::OpenFlow::Protocol;
 use NetPacket::Ethernet;
 use NetPacket::IP;
 use NetPacket::TCP;
-#use NetPacket::IPv6;
+
 use Net::Pcap;
 use XML::Simple;
 use Log::Log4perl;
-#use MongoDB;
+
+use Net::RabbitFoot;
+use JSON;
+
 use Data::Dumper;
 use Log::Log4perl;
 
@@ -34,10 +37,10 @@ sub new{
 	return;
     }
     
-    $self->{'mongo'} = $self->_connect_to_mongo();
+    $self->{'rabbit'} = $self->_connect_to_rabbit();
     
-    if(!defined($self->{'mongo'})){
-	$self->{'logger'}->error("Error connecting to Mongo");
+    if(!defined($self->{'rabbit'})){
+	$self->{'logger'}->error("Error connecting to Rabbit");
     	return;
     }
 
@@ -50,14 +53,19 @@ sub new{
     return $self;
 }
 
-sub _connect_to_mongo{
+sub _connect_to_rabbit{
     my $self = shift;
+    
+    my $rf = Net::RabbitFoot->new()->load_xml_spec()->connect( host => $self->{'config'}->{'rabbit'}->{'host'},
+							       port => $self->{'config'}->{'rabbit'}->{'port'},
+							       user => $self->{'config'}->{'rabbit'}->{'user'},
+							       pass => $self->{'config'}->{'rabbit'}->{'pass'},
+							       vhost => $self->{'config'}->{'rabbit'}->{'vhost'},
+							       timeout => 1 );
 
-#    my $client = MongoDB::MongoClient->new( host => $self->{'config'}->{'mongo'}->{'host'},
-#					    port => $self->{'config'}->{'mongo'}->{'port'});
-#
-#    my $db = $client->get_database( $self->{'config'}->{'mongo'}->{'database'} );
-#    return $db;
+    my $ch = $rf->open_channel();
+    
+	
 }
 
 sub _process_config{
@@ -124,10 +132,8 @@ sub _process_packet{
     my $ip = NetPacket::IP->decode($ethernet->{'data'});
     my $tcp = NetPacket::TCP->decode($ip->{'data'});
     my $data = $tcp->{'data'};
-
+    warn Data::Dumper::Dumper($ip);
     return if (!defined($data) || $data eq '');
-
-#    warn "Data: " . $data . "\n";
 
     my $of_message;
     eval{
@@ -137,18 +143,24 @@ sub _process_packet{
 
     warn Data::Dumper::Dumper($of_message);
 
-    if(defined($of_message)){
-	$self->_push_to_mongo({ts => time(),
-			       message => $of_message});
+    if(defined($of_message) && defined($of_message->{'ofp_header'})){
+	$self->_push_to_rabbit({ts => $header->{'tv_sec'} . "." . $header->{'tv_usec'},
+				src => $ip->{'src_ip'},
+				dst => $ip->{'dest_ip'},
+				message => $of_message});
     }
 }
 
-sub _push_to_mongo{
+sub _push_to_rabbit{
     my $self = shift;
-    my %params = @_;
+    my $data = shift;
 
-#    warn Data::Dumper::Dumper($params{'of_message'});
-    
+    my $json = to_json($data);
+
+    $self->{'rabbit'}->publish( exchange    => "",
+				routing_key => "OF_Messages",
+				body        => $json,
+				durable     => 0);
 }
 
 1;
