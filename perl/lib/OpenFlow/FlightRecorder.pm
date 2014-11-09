@@ -132,7 +132,7 @@ sub _process_packet{
     my $ip = NetPacket::IP->decode($ethernet->{'data'});
     my $tcp = NetPacket::TCP->decode($ip->{'data'});
     my $data = $tcp->{'data'};
-    warn Data::Dumper::Dumper($ip);
+    
     return if (!defined($data) || $data eq '');
 
     my $of_message;
@@ -141,12 +141,16 @@ sub _process_packet{
     }; 
     warn $@ if $@;
 
-    warn Data::Dumper::Dumper($of_message);
+    #warn Data::Dumper::Dumper($of_message);
+    #warn Data::Dumper::Dumper($ip);
+    #warn Data::Dumper::Dumper($tcp);
 
     if(defined($of_message) && defined($of_message->{'ofp_header'})){
 	$self->_push_to_rabbit({ts => $header->{'tv_sec'} . "." . $header->{'tv_usec'},
 				src => $ip->{'src_ip'},
 				dst => $ip->{'dest_ip'},
+                                src_port => $tcp->{'src_port'},
+                                dst_port => $tcp->{'dst_port'},
 				message => $of_message});
     }
 }
