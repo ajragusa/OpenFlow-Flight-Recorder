@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import pprint
 import sys
 import signal
 import pika
@@ -7,6 +8,7 @@ import os
 import pymongo
 import json
 import time
+from collections import Iterable
 import xml.etree.ElementTree as xml
 
 DEFAULT_CONFIG_FILE = '/etc/openflow_flight_recorder/config.xml'
@@ -68,13 +70,42 @@ class Receiver():
 
 
     def process_data(self, data):
+        
+        # get mongo database instances based upon data type
+        mongodb                 = self.mongo[self.mongo_database]
+        data_collection         = mongodb['of_messages']
 
-            # get mongo database instances based upon data type
-            mongodb                 = self.mongo[self.mongo_database]
-            data_collection         = mongodb['of_messages']
+        pp = pprint.PrettyPrinter(indent=2)
+        #pp.pprint(data)
 
-            data_collection.insert(data)
-            print "INserted Data!!\n";
+        cleaned_data = self.change_longs(data)
+        data_collection.insert(cleaned_data)
+
+        #pp.pprint(cleaned_data)
+
+        print "Inserted Data!!\n";
+
+    def change_longs(self,data):
+        
+        if(isinstance(data, dict)):
+            for element in data.keys():
+                #print element
+                if(isinstance(data[element], Iterable)):
+                    data[element] = self.change_longs(data[element])
+                elif(isinstance(data[element], long)):
+                    data[element] = float(data[element])
+        
+        elif(isinstance(data, list)):
+            for i in range(len(data)):
+                if(isinstance(data[i], long)):
+                    data[i] = float(data[i])
+                elif(isinstance(data[i], Iterable)):
+                    data[i] = self.change_longs(data[i])
+            
+        if(isinstance(data, long)):
+            data = float(data)
+
+        return data
 
 if __name__ == '__main__':
 
