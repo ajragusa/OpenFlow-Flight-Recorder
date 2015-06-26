@@ -50,6 +50,8 @@ sub new{
 	$self->{'logger'}->error("Error creating OF Protocol parser");
     }
 
+    $self->{'streams'};
+
     return $self;
 }
 
@@ -124,31 +126,66 @@ sub _process_packet{
 
     #warn "Header: " . Data::Dumper::Dumper($header);
     #warn "Packet: " . Data::Dumper::Dumper($pkt);
-    $self->{'logger'}->debug("Header: " . Data::Dumper::Dumper($header));
-    $self->{'logger'}->info("Packet: " . Data::Dumper::Dumper($pkt));
+#    $self->{'logger'}->debug("Header: " . Data::Dumper::Dumper($header));
+#    $self->{'logger'}->info("Packet: " . Data::Dumper::Dumper($pkt));
   
     
     my $ethernet = NetPacket::Ethernet->decode($pkt);
     my $ip = NetPacket::IP->decode($ethernet->{'data'});
     my $tcp = NetPacket::TCP->decode($ip->{'data'});
     my $data = $tcp->{'data'};
-    warn Data::Dumper::Dumper($ip);
+
     return if (!defined($data) || $data eq '');
 
     my $of_message;
     eval{
 	$of_message = $self->{'ofp'}->ofpt_decode(\$data);
     }; 
-    warn $@ if $@;
+#    warn $@ if $@;
 
-    warn Data::Dumper::Dumper($of_message);
+#    warn Data::Dumper::Dumper($of_message);
+
+    my $stream = $self->find_stream($ip);
 
     if(defined($of_message) && defined($of_message->{'ofp_header'})){
 	$self->_push_to_rabbit({ts => $header->{'tv_sec'} . "." . $header->{'tv_usec'},
 				src => $ip->{'src_ip'},
 				dst => $ip->{'dest_ip'},
+				stream => $stream,
 				message => $of_message});
     }
+}
+
+sub find_stream{
+    my $self = shift;
+    my $ip = shift;
+    my $tcp = shift;
+
+    #we are looking for tcp streams!
+    #first lok to see if we find our src ip and src port
+    if(defined($self->{'streams'}->{$ip->{'src_ip'}})){
+	if(defined($self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}})){
+	    return $self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}};
+	}
+    }else{
+	if(defined($self->{'streams'}->{$ip->{'dest_ip'}})){
+	    if(defined($self->{'streams'}->{$ip->{'dest_ip'}}->{$tcp->{'dest_port'}})){
+		return $self->{'streams'}->{$ip->{'dest_ip'}}->{$tcp->{'dest_port'}};
+	    }
+	}
+    }
+    
+    #if we made it this far we didn't find the stream
+    #set it up
+    if(!defined($self->{'streams'}->{$ip->{'src_ip'}))){
+	$self->{'streams'}->{$ip->{'src_ip'}} = {};
+    }
+    
+    $self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}} = {};
+    
+    return $self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}};
+	
+    
 }
 
 sub _push_to_rabbit{
