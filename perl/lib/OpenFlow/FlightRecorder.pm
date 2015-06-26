@@ -141,9 +141,6 @@ sub _process_packet{
     eval{
 	$of_message = $self->{'ofp'}->ofpt_decode(\$data);
     }; 
-#    warn $@ if $@;
-
-#    warn Data::Dumper::Dumper($of_message);
 
     my $stream = $self->find_stream($ip);
 
@@ -152,6 +149,8 @@ sub _process_packet{
 				src => $ip->{'src_ip'},
 				dst => $ip->{'dest_ip'},
 				stream => $stream,
+                                src_port => $tcp->{'src_port'},
+				dst_port => $tcp->{'dest_port'},
 				message => $of_message});
     }
 }
