@@ -123,12 +123,8 @@ sub _process_packet{
     my $pkt = $params{'packet'};
     my $header = $params{'header'};
 
-
-    #warn "Header: " . Data::Dumper::Dumper($header);
-    #warn "Packet: " . Data::Dumper::Dumper($pkt);
-#    $self->{'logger'}->debug("Header: " . Data::Dumper::Dumper($header));
-#    $self->{'logger'}->info("Packet: " . Data::Dumper::Dumper($pkt));
-  
+    $self->{'logger'}->debug("Header: " . Data::Dumper::Dumper($header));
+    $self->{'logger'}->info("Packet: " . Data::Dumper::Dumper($pkt));
     
     my $ethernet = NetPacket::Ethernet->decode($pkt);
     my $ip = NetPacket::IP->decode($ethernet->{'data'});
@@ -143,6 +139,11 @@ sub _process_packet{
     }; 
 
     my $stream = $self->find_stream($ip);
+
+    if($of_message->{'ofp_header'}{'ofp_type'} == q{OFPT_FEATURES_REPLY}){
+	my $dpid = $of_message->{'datapath_id'};
+	$stream->{'dpid'} = $dpid;
+    }
 
     if(defined($of_message) && defined($of_message->{'ofp_header'})){
 	$self->_push_to_rabbit({ts => $header->{'tv_sec'} . "." . $header->{'tv_usec'},
@@ -176,7 +177,7 @@ sub find_stream{
     
     #if we made it this far we didn't find the stream
     #set it up
-    if(!defined($self->{'streams'}->{$ip->{'src_ip'}))){
+    if(!defined($self->{'streams'}->{$ip->{'src_ip'}})){
 	$self->{'streams'}->{$ip->{'src_ip'}} = {};
     }
     

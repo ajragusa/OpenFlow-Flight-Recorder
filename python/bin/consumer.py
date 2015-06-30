@@ -32,8 +32,11 @@ class Receiver():
         self.rabbit_queue = self.config.find('rabbit').attrib.get('queue')
         self.mongo = pymongo.MongoClient( self.mongo_host, self.mongo_port )
         
+        creds = pika.PlainCredentials(self.config.find('rabbit').attrib.get('user'), self.config.find('rabbit').attrib.get('pass'))
         connection   = pika.BlockingConnection( pika.ConnectionParameters( host = self.rabbit_host,
-                                                                           port = self.rabbit_port ) )
+                                                                           port = self.rabbit_port,
+                                                                           credentials = creds
+                                                                       ) )
 
         self.channel = connection.channel()
 
@@ -43,11 +46,12 @@ class Receiver():
         self.channel.basic_qos(prefetch_count = 10)
 
         #print " %s waiting for input" % self.id
-
+        
         self.channel.basic_consume(self.data_callback,
                                    queue = self.rabbit_queue,
                                    no_ack = False)
 
+        print "Ready to receive events!\n"
         self.channel.start_consuming() 
 
     def data_callback(self, ch, method, properties, body):
@@ -69,21 +73,69 @@ class Receiver():
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
-    def process_data(self, data):
-        
+    def process_data(self, data):        
         # get mongo database instances based upon data type
         mongodb                 = self.mongo[self.mongo_database]
         data_collection         = mongodb['of_messages']
 
         pp = pprint.PrettyPrinter(indent=2)
-        #pp.pprint(data)
-
         cleaned_data = self.change_longs(data)
-        data_collection.insert(cleaned_data)
 
-        #pp.pprint(cleaned_data)
+        #find an existing stream
+        existing_doc = data_collection.find({'stream_id': cleaned_data.stream_id})
+        if(existing_doc.length > 0):
+            if(existing_doc.index(existing_doc.length)['messages'].length > 50):
+                #need to start a new document once it is too large
+                #end the current doc and create a new doc
+                existing_doc.index(existing_doc.length)['end'] = System.currentTimeMillis()
+                data_collection.update_one({'stream_id': cleaned_data['stream_id'],
+                                            'start': existing_doc.index(existing_doc.length)['start']},
+                                           existing_doc.index(existing_doc.length))
+                #create the new obj
+                new_obj = defaultdict(list)
+                new_obj['messages'] = []
+                new_obj['stream_id'] = cleaned_data.stream_id
+                new_obj['start'] = System.currentTimeMillis()
+                new_obj['end'] = None
+                new_obj['tcp'] = defaultdict(list)
+                new_obj['tcp']['src_ip'] = cleaned_data['src']
+                new_obj['tcp']['dst_ip'] = cleaned_data['dst']
+                new_obj['tcp']['src_port'] = cleaned_data['src_port']
+                new_obj['tcp']['dst_port'] = cleaned_data['dst_port']
+                new_obj['dpid'] = cleaned_data['dpid']
+                new_obj['messages'].push(cleaned_data['message'])
+                data_collection.insert(new_obj)
+                print "Inserted new Doc for existing stream\n"
+            else:
+                #update the existing doc
+                #if we don't have our dpid set on the doc but do in this message set it
+                if(existing_doc.index(existing_doc.length)['dpid'] == None and cleaned_data['dpid'] is not None):
+                    existing_doc.index(existing_doc.length)['dpid'] = cleaned_data['dpid']
+                #append our current message
+                existing_doc.index(existing_doc.length)['messages'].push({'ts': System.currentTimeMillis(), 'message': cleaned_data['message']})
+                #update the doc
+                data_collection.update_one({'stream_id': cleaned_data['stream_id'], 
+                                            'start': existing_doc.index(existing_doc.length)['start']},
+                                           existing_doc.index(existing_doc.length))
+                print "Updated existing doc\n"
 
-        print "Inserted Data!!\n";
+        else:
+            #there is no existing doc
+            #update it
+            new_obj = defaultdict(list)
+            new_obj['messages'] = []
+            new_obj['stream_id'] = cleaned_data.stream_id
+            new_obj['start'] = System.currentTimeMillis()
+            new_obj['end'] = None
+            new_obj['tcp'] = defaultdict(list)
+            new_obj['tcp']['src_ip'] = cleaned_data['src']
+            new_obj['tcp']['dst_ip'] = cleaned_data['dst']
+            new_obj['tcp']['src_port'] = cleaned_data['src_port']
+            new_obj['tcp']['dst_port'] = cleaned_data['dst_port']
+            new_obj['dpid'] = cleaned_data['dpid']
+            new_obj['messages'].push(cleaned_data['message'])
+            data_collection.insert(new_obj)
+            print "Inserted Data!!\n";
 
     def change_longs(self,data):
         
