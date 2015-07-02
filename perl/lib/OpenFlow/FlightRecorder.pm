@@ -1,6 +1,7 @@
 package OpenFlow::FlightRecorder;
 
 use strict;
+use Data::UUID;
 use Net::OpenFlow;
 use Net::OpenFlow::Protocol;
 use NetPacket::Ethernet;
@@ -90,6 +91,8 @@ sub start_capture{
     my $promisc = 0;
     my $net;
     my $mask;
+    $self->{'ug'} = Data::UUID->new();
+
     Net::Pcap::lookupnet($self->{'config'}->{'capture'}->{'interface'}, \$net, \$mask, \$error);
 
     my $cap = Net::Pcap::open_live( $self->{'config'}->{'capture'}->{'interface'},
@@ -124,7 +127,7 @@ sub _process_packet{
     my $header = $params{'header'};
 
     $self->{'logger'}->debug("Header: " . Data::Dumper::Dumper($header));
-    $self->{'logger'}->info("Packet: " . Data::Dumper::Dumper($pkt));
+    #$self->{'logger'}->info("Packet: " . Data::Dumper::Dumper($pkt));
     
     my $ethernet = NetPacket::Ethernet->decode($pkt);
     my $ip = NetPacket::IP->decode($ethernet->{'data'});
@@ -140,11 +143,13 @@ sub _process_packet{
 
     my $stream = $self->find_stream($ip);
 
-    if($of_message->{'ofp_header'}{'ofp_type'} == q{OFPT_FEATURES_REPLY}){
+    #warn Data::Dumper::Dumper($of_message->{'ofp_header'}->{'type'});
+    if($of_message->{'ofp_header'}->{'type'} eq 'OFPT_FEATURES_REPLY'){
+	warn "TYPE OF OFPT_FEATURES_REPLY\n";
 	my $dpid = $of_message->{'datapath_id'};
 	$stream->{'dpid'} = $dpid;
     }
-
+    warn Data::Dumper::Dumper($stream);
     if(defined($of_message) && defined($of_message->{'ofp_header'})){
 	$self->_push_to_rabbit({ts => $header->{'tv_sec'} . "." . $header->{'tv_usec'},
 				src => $ip->{'src_ip'},
@@ -182,10 +187,16 @@ sub find_stream{
     }
     
     $self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}} = {};
-    
+    $self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}}->{'stream_id'} = $self->_generate_unique_stream_id();
+    #warn Data::Dumper::Dumper($self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}}->{'stream_id'});
     return $self->{'streams'}->{$ip->{'src_ip'}}->{$tcp->{'src_port'}};
 	
     
+}
+
+sub _generate_unique_stream_id{
+    my $self = shift;
+    return $self->{'ug'}->create_str();
 }
 
 sub _push_to_rabbit{
