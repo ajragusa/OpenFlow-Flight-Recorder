@@ -22,10 +22,14 @@ class FlightRecorderFetcher:
 
         self.error = ""
 
-    def _iterate_over_cursor(self, cur ):
+    def _iterate_over_cursor(self, cur, doIdRemoval=False, doIdRename=False, rename=""):
         results = []
         for doc in cur:
-            del doc['_id']
+            if doIdRemoval:
+                del doc['_id']
+            if doIdRename:
+                doc[rename] = doc['_id']
+                del doc['_id']
             results.append(doc)
 
         return results
@@ -41,7 +45,7 @@ class FlightRecorderFetcher:
         page = params.get('page')
         
         query = []
-        if start is None:
+        if start is None or start <= 0:
             #this is required if they didn't specify set to 5min ago
             start = int(time.time()) - 300
         else:
@@ -76,7 +80,7 @@ class FlightRecorderFetcher:
 
         print query
 
-        cur = self.messages.find( query ).limit(100)
+        cur = self.messages.find( query ).limit(limit)
         print cur.count()
         results = self._iterate_over_cursor(cur)
 
@@ -129,14 +133,15 @@ class FlightRecorderFetcher:
         dpid = params.get('dpid')
         limit = params.get('limit')
         page = params.get('page')
+        stream_id = params.get('stream_id')
         query = []
-        if start is None:
+        if start is None or start <= 0:
             #this is required if they didn't specify set to 5min ago
             start = int(time.time()) - 300
         else:
             start = int(start)
 
-        query.append({'$or': [{'start': {'$gt': start}}, {'start': {'$gt': str(start)}}]})
+        query.append({'$or': [{'messages.ts': {'$gt': start}}, {'messages.ts': {'$gt': str(start)}}]})
 
         if stop is None:
             #presume no end time
@@ -144,10 +149,14 @@ class FlightRecorderFetcher:
         else:
             if(int(stop) == -1):
                 #specified no end time
-            pass
+                pass
             else:
                 #find streams between this time
-                query.append({'$or': [{'end': {'$lt': int(stop)}}, {'end': {'$lt': str(stop)}}]})
+                query.append({'$or': [{'messages.ts': {'$lt': int(stop)}}, {'messages.ts': {'$lt': str(stop)}}]})
+
+
+        if stream_id is not None:
+            query.append({'$and': [{'stream_id': stream_id}]})
 
         query = {'$and': query }
 
@@ -155,10 +164,13 @@ class FlightRecorderFetcher:
             limit = 100
 
         print query
+        #cur = self.messages.aggregate( [{'$match': query},{ '$group' : { '_id': '$stream_id', 'messages': {'$push': '$messages.message'}}}, {'$sort': {'ts':-1}}, {'$limit': limit}], allowDiskUse=True)
+        cur = self.messages.find( query ).sort('messages.ts', pymongo.ASCENDING).limit(limit)
+        results = []
+        for doc in cur:
+            results += doc['messages']
 
-        cur = self.messages.find( query ).limit(100)
-        print cur.count()
-        results = self._iterate_over_cursor(cur)
+        return results
 
     def get_error(self):
         return self.error

@@ -9,51 +9,74 @@
 
       $(document).ready(function(){
         var lastIdx = null;
+        var table_messages = null;
         var table = $('#dt').DataTable( {
           "serverSide": true,
           "ajax": {
-              "url": "http://aj-dev6.grnoc.iu.edu:27080/offr/of_messages/_find?",
+              "url": "http://hyperion.empowermentengineering.com:8080/streams?",
               "dataSrc": "results",
               "data": function(d){
-                delete d.columns;
-                delete d.search;
-                delete d.order;
-                d.skip = d.start;
-                d.batch_size = d.length;
                 
               }
           },
           "columns": [
-            {"data": "src",
+            {"data": "tcp.src_ip",
              "title": "Source IP"},
-            {"data": "dst",
+            {"data": "tcp.dst_ip",
              "title": "Destination IP"},
-            {"data": "ts",
-             "title": "Date",
+            {"data": "start",
+             "title": "Stream Start Date",
              "render": function(data, type, row, meta){
                        var date = new Date(Math.floor(parseInt(data * 1000)));
                        return date;
             }},
-            {"data": "message",
-             "render": function(data, type, row, meta){
-               if(data.ofp_header == undefined){
-                 return "";
-               }else{
-                 return data.ofp_header.type;
-               }
-             },
-             "title": "OF Header Type"}
+            {"data": "dpid", "title": "DPID"}
           ]
         });
 
-      
+
         $('#dt').on('click','tr',function(){
           if( $(this).hasClass('selected')){
             $(this).removeClass('selected');
           }else{
             table.$('tr.selected').removeClass('selected');
             $(this).addClass('selected');
-            display_details(table.rows('.selected').data()[0]);
+            table_messages = $('#dt_messages').DataTable( {
+            "serverSide": true,
+            "ajax": {
+                "url": "http://hyperion.empowermentengineering.com:8080/messages?" + table.rows('.selected').data()[0].stream_id,
+                "dataSrc": "results",
+                "data": function(d){
+      
+                }
+            },
+            "columns": [
+              {"data": "message.ofp_header.type",
+               "title": "OF Message Type",
+               "defaultContent": "Unknown"},
+              {"data": "message.ofp_header.length",
+               "title": "message length",
+               "defaultContent": "Unknown"},
+              {"data": "ts",
+               "title": "Time",
+               "render": function(data, type, row, meta){
+                         var date = new Date(Math.floor(parseInt(data * 1000)));
+                         return date;
+               }
+              }
+            ]
+          });
+      }});
+      
+
+
+        $('#dt_messages').on('click','tr',function(){
+          if( $(this).hasClass('selected')){
+            $(this).removeClass('selected');
+          }else{
+            table_messages.$('tr.selected').removeClass('selected');
+            $(this).addClass('selected');
+            display_details(table_messages.rows('.selected').data()[0]);
           }
         });
     
@@ -84,10 +107,16 @@
   </head>
   <body>
 
+    <h3>Current Streams (select one)</h3>
     <table id="dt">
     </table>
 
-<br>
+    <br>
+
+    <h3>Messages in the stream:</h3>
+    
+    <table id="dt_messages">
+    </table>
 
     <div id="flow_mod" style="height:200px; width: 100%;">
     </div>

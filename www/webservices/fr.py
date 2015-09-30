@@ -6,13 +6,17 @@ import re
 import struct
 import pymongo
 from flight_recorder.mongo import FlightRecorderFetcher
-from bottle import route, run, template, request
+from bottle import hook, route, run, template, request, response
 
 method_list = {}
 
 def main():
     #create a new flight recorder instance
     fr = FlightRecorderFetcher()
+
+    @hook('after_request')
+    def enable_cors():
+        response.headers['Access-Control-Allow-Origin'] = '*'
 
     # provides a consistent way to return data via webservices
     def format_results( res, err=None ):
